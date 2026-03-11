@@ -1,0 +1,8 @@
+[reticulum]
+  enable_transport = False
+  share_instance = No
+
+[interfaces]
+  [[Default Interface]]
+    type = AutoInterface
+    enabled = True

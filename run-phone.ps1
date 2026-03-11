@@ -1,6 +1,6 @@
 # ---- CONFIG ----
 $device = 'adb-RFCX5083CEX-oFdOzS._adb-tls-connect._tcp'  # <-- your phone from `adb devices`
-$pkg    = 'com.example.audhd'                               # <-- your applicationId
+$pkg    = 'com.privacy.faraday'                               # <-- your applicationId
 
 # ---- BUILD + INSTALL ----
 .\gradlew :app:installDebug
