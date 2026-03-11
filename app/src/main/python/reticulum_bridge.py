@@ -106,20 +106,26 @@ class ReticulumBridge:
             import RNS
             import LXMF
 
-            # Clean up the destination hash
-            dest_hash_hex = dest_hash_hex.strip().replace(":", "")
+            # Clean up the destination hash (prettyhexrep adds <> and colons)
+            dest_hash_hex = dest_hash_hex.strip().replace(":", "").replace("<", "").replace(">", "")
 
             # Resolve destination
             dest_hash = bytes.fromhex(dest_hash_hex)
             dest_identity = RNS.Identity.recall(dest_hash)
 
             if dest_identity is None:
-                # Try to request the identity from the network
+                # Request path and wait for resolution with timeout
                 RNS.Transport.request_path(dest_hash)
-                return {
-                    "status": "pending",
-                    "message": "Path requested, identity not yet known. Try again after announce.",
-                }
+                timeout = 15
+                start = time.time()
+                while dest_identity is None and time.time() - start < timeout:
+                    time.sleep(0.5)
+                    dest_identity = RNS.Identity.recall(dest_hash)
+                if dest_identity is None:
+                    return {
+                        "status": "error",
+                        "error": "Could not resolve destination after 15s. Ensure peer has announced.",
+                    }
 
             lxmf_dest = RNS.Destination(
                 dest_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, "lxmf", "delivery"

@@ -86,6 +86,26 @@ fun DebugHomeScreen() {
                             )
                         }
                     }
+
+                    ElevatedCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { navController.navigate("integration_test") }
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "Integration Test",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Encrypted Signal messages over Reticulum/LXMF",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -96,6 +116,10 @@ fun DebugHomeScreen() {
 
         composable("reticulum_test") {
             ReticulumTestScreen(onNavigateBack = { navController.popBackStack() })
+        }
+
+        composable("integration_test") {
+            IntegrationTestScreen(onNavigateBack = { navController.popBackStack() })
         }
     }
 }

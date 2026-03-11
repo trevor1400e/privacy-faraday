@@ -17,6 +17,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,16 +35,19 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReticulumTestScreen(
+fun IntegrationTestScreen(
     onNavigateBack: (() -> Unit)? = null,
-    viewModel: ReticulumTestViewModel = viewModel()
+    viewModel: IntegrationTestViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -58,7 +62,7 @@ fun ReticulumTestScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Reticulum/LXMF Test") },
+                title = { Text("Integration Test") },
                 navigationIcon = {
                     if (onNavigateBack != null) {
                         IconButton(onClick = onNavigateBack) {
@@ -87,24 +91,18 @@ fun ReticulumTestScreen(
         ) {
             Spacer(modifier = Modifier.height(4.dp))
 
-            NetworkControlCard(
+            SystemStatusCard(state = state, onInitialize = viewModel::initializeAll)
+            KeyExchangeCard(
                 state = state,
-                onStart = viewModel::initializeReticulum,
-                onStop = viewModel::shutdownReticulum,
-                onAnnounce = viewModel::announce
+                onPeerAddressChanged = viewModel::onPeerAddressChanged,
+                onInitiateKeyExchange = viewModel::initiateKeyExchange
             )
-
-            IdentityCard(state = state)
-
-            SendMessageCard(
+            EncryptedMessagingCard(
                 state = state,
-                onDestHashChanged = viewModel::onDestHashChanged,
-                onMessageContentChanged = viewModel::onMessageContentChanged,
+                onMessageInputChanged = viewModel::onMessageInputChanged,
                 onSend = viewModel::sendMessage
             )
-
-            ReceivedMessagesCard(state = state)
-
+            MessageLogCard(state = state)
             LogCard(
                 logMessages = state.logMessages,
                 onClear = viewModel::clearLog
@@ -116,110 +114,118 @@ fun ReticulumTestScreen(
 }
 
 @Composable
-private fun NetworkControlCard(
-    state: ReticulumTestViewModel.UiState,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
-    onAnnounce: () -> Unit
+private fun SystemStatusCard(
+    state: IntegrationTestViewModel.UiState,
+    onInitialize: () -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            SectionHeader("Network Control")
+            SectionHeader("System Status")
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (!state.isRunning) {
+            if (!state.reticulumRunning) {
                 Button(
-                    onClick = onStart,
+                    onClick = onInitialize,
                     enabled = !state.isInitializing,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (state.isInitializing) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                     } else {
-                        Text("Start Reticulum")
+                        Text("Initialize (Signal + Reticulum)")
                     }
                 }
             } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onStop,
-                        enabled = !state.isProcessing,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Stop")
-                    }
-                    Button(
-                        onClick = onAnnounce,
-                        enabled = !state.isProcessing,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Announce")
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                StatusRow(label = "Status", value = "Running", success = true)
+                StatusRow(label = "Reticulum", value = "Running", success = true)
+                Spacer(modifier = Modifier.height(4.dp))
+                MonoLabel("LXMF Address", state.lxmfAddress)
+                Spacer(modifier = Modifier.height(4.dp))
+                MonoLabel("Signal Fingerprint", state.signalFingerprint)
             }
         }
     }
 }
 
 @Composable
-private fun IdentityCard(state: ReticulumTestViewModel.UiState) {
-    if (state.lxmfAddress.isBlank()) return
-
+private fun KeyExchangeCard(
+    state: IntegrationTestViewModel.UiState,
+    onPeerAddressChanged: (String) -> Unit,
+    onInitiateKeyExchange: () -> Unit
+) {
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            SectionHeader("Identity")
+            SectionHeader("Key Exchange")
             Spacer(modifier = Modifier.height(8.dp))
 
-            MonoLabel("LXMF Address", state.lxmfAddress)
-            Spacer(modifier = Modifier.height(4.dp))
-            MonoLabel("Identity Hash", state.identityHash)
+            OutlinedTextField(
+                value = state.peerAddress,
+                onValueChange = onPeerAddressChanged,
+                label = { Text("Peer LXMF Address") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
             Spacer(modifier = Modifier.height(8.dp))
 
-            OutlinedButton(
-                onClick = {
-                    clipboardManager.setText(AnnotatedString(state.lxmfAddress.replace(":", "").replace("<", "").replace(">", "")))
-                },
-                modifier = Modifier.fillMaxWidth()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Copy Address")
+                Button(
+                    onClick = onInitiateKeyExchange,
+                    enabled = state.reticulumRunning && state.peerAddress.isNotBlank()
+                            && !state.isProcessing
+                            && state.peerSessionState != "ESTABLISHED",
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (state.isProcessing) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Key Exchange")
+                    }
+                }
+                OutlinedButton(
+                    onClick = {
+                        clipboardManager.setText(
+                            AnnotatedString(state.lxmfAddress.replace(":", "").replace("<", "").replace(">", ""))
+                        )
+                    },
+                    enabled = state.lxmfAddress.isNotBlank(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Copy My Addr")
+                }
+            }
+
+            if (state.peerSessionState != "UNKNOWN" || state.peerAddress.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                StatusRow(
+                    label = "Session",
+                    value = state.peerSessionState,
+                    success = state.peerSessionState == "ESTABLISHED"
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SendMessageCard(
-    state: ReticulumTestViewModel.UiState,
-    onDestHashChanged: (String) -> Unit,
-    onMessageContentChanged: (String) -> Unit,
+private fun EncryptedMessagingCard(
+    state: IntegrationTestViewModel.UiState,
+    onMessageInputChanged: (String) -> Unit,
     onSend: () -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            SectionHeader("Send Message")
+            SectionHeader("Encrypted Messaging")
             Spacer(modifier = Modifier.height(8.dp))
 
             OutlinedTextField(
-                value = state.destHash,
-                onValueChange = onDestHashChanged,
-                label = { Text("Destination Hash") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = state.messageContent,
-                onValueChange = onMessageContentChanged,
-                label = { Text("Message Content") },
+                value = state.messageInput,
+                onValueChange = onMessageInputChanged,
+                label = { Text("Message") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -227,54 +233,57 @@ private fun SendMessageCard(
 
             Button(
                 onClick = onSend,
-                enabled = state.isRunning && state.destHash.isNotBlank()
-                        && state.messageContent.isNotBlank() && !state.isProcessing,
+                enabled = state.peerSessionState == "ESTABLISHED"
+                        && state.messageInput.isNotBlank()
+                        && !state.isProcessing,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (state.isProcessing) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 } else {
-                    Text("Send")
+                    Text("Send Encrypted")
                 }
-            }
-
-            if (state.lastSendResult.isNotBlank()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                StatusRow(
-                    label = "Result",
-                    value = state.lastSendResult,
-                    success = state.lastSendResult.startsWith("ok")
-                )
             }
         }
     }
 }
 
 @Composable
-private fun ReceivedMessagesCard(state: ReticulumTestViewModel.UiState) {
+private fun MessageLogCard(state: IntegrationTestViewModel.UiState) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            SectionHeader("Received Messages (${state.receivedMessages.size})")
+            SectionHeader("Messages (${state.messages.size})")
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (state.receivedMessages.isEmpty()) {
+            if (state.messages.isEmpty()) {
                 Text(
-                    text = if (state.isRunning) "Listening for messages..." else "Start Reticulum to receive messages",
+                    text = "No messages yet",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                state.receivedMessages.takeLast(10).forEach { msg ->
+                state.messages.takeLast(20).forEach { msg ->
+                    val arrow = if (msg.direction == "OUT") "\u2192" else "\u2190"
+                    val color = if (msg.direction == "OUT")
+                        MaterialTheme.colorScheme.primary
+                    else
+                        Color(0xFF4CAF50)
+
                     Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                        MonoLabel("From", msg.sourceHash)
-                        MonoLabel("Content", "\"${msg.content}\"")
                         Text(
-                            text = "at ${msg.timestamp}",
-                            style = MaterialTheme.typography.labelSmall,
+                            text = "$arrow ${msg.plaintext}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = color
+                        )
+                        Text(
+                            text = "${msg.timestamp} | ${msg.ciphertextHex}",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            lineHeight = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
+                    HorizontalDivider()
                 }
             }
         }
