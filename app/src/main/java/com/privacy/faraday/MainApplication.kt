@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import com.privacy.faraday.network.ChatManager
 
 class MainApplication : Application() {
 
@@ -14,6 +15,7 @@ class MainApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         initializePython()
+        ChatManager.initialize(this)
     }
 
     private fun initializePython() {
