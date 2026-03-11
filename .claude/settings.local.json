@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:chaquo.com)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(./gradlew :app:assembleDebug:*)",
+      "Bash(./gradlew:*)",
+      "WebFetch(domain:mvnrepository.com)",
+      "WebFetch(domain:flutterfixes.com)",
+      "WebFetch(domain:android-developers.googleblog.com)",
+      "WebFetch(domain:issuetracker.google.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:central.sonatype.com)"
+    ]
+  }
+}
