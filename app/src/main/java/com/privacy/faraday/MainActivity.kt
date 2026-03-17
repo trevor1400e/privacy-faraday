@@ -10,6 +10,7 @@ import androidx.navigation.compose.rememberNavController
 import com.privacy.faraday.ui.chat.ChatScreen
 import com.privacy.faraday.ui.chat.ConversationListScreen
 import com.privacy.faraday.ui.chat.NewConversationScreen
+import com.privacy.faraday.ui.chat.QrScannerScreen
 import com.privacy.faraday.ui.debug.DebugHomeScreen
 import com.privacy.faraday.ui.settings.SettingsScreen
 import com.privacy.faraday.ui.theme.FaradayTheme
@@ -41,13 +42,31 @@ class MainActivity : ComponentActivity() {
                             onNavigateBack = { navController.popBackStack() }
                         )
                     }
-                    composable("new_conversation") {
+                    composable("new_conversation") { backStackEntry ->
+                        val scannedAddress = backStackEntry
+                            .savedStateHandle
+                            .get<String>("scanned_address")
                         NewConversationScreen(
                             onNavigateBack = { navController.popBackStack() },
                             onNavigateToChat = { address ->
                                 navController.popBackStack()
                                 navController.navigate("chat/$address")
-                            }
+                            },
+                            onNavigateToScanner = {
+                                navController.navigate("qr_scanner")
+                            },
+                            scannedAddress = scannedAddress
+                        )
+                    }
+                    composable("qr_scanner") {
+                        QrScannerScreen(
+                            onResult = { scannedAddress ->
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("scanned_address", scannedAddress)
+                                navController.popBackStack()
+                            },
+                            onNavigateBack = { navController.popBackStack() }
                         )
                     }
                     composable("settings") {

@@ -21,4 +21,13 @@ interface ContactDao {
 
     @Query("SELECT * FROM contacts")
     suspend fun getAllOnce(): List<ContactEntity>
+
+    @Query("UPDATE contacts SET disappearingMessagesDuration = :duration WHERE lxmfAddress = :address")
+    suspend fun updateDisappearingDuration(address: String, duration: Long)
+
+    @Query("UPDATE contacts SET nickname = :nickname WHERE lxmfAddress = :address")
+    suspend fun updateNickname(address: String, nickname: String)
+
+    @Query("UPDATE contacts SET isMuted = :isMuted WHERE lxmfAddress = :address")
+    suspend fun updateMuted(address: String, isMuted: Boolean)
 }

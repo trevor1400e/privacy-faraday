@@ -38,8 +38,15 @@ fun ChatScreen(
     val isSending by viewModel.isSending.collectAsState()
     val listState = rememberLazyListState()
 
+    val showDisappearingDialog by viewModel.showDisappearingDialog.collectAsState()
+    val showNicknameDialog by viewModel.showNicknameDialog.collectAsState()
+    val showSoundDialog by viewModel.showSoundDialog.collectAsState()
+    val showSafetyNumberDialog by viewModel.showSafetyNumberDialog.collectAsState()
+    val safetyFingerprints by viewModel.safetyFingerprints.collectAsState()
+
     val sessionState = contact?.sessionState ?: "UNKNOWN"
-    val displayName = contact?.displayName
+    val displayName = contact?.nickname?.takeIf { it.isNotBlank() }
+        ?: contact?.displayName?.takeIf { it.isNotBlank() }
         ?: viewModel.conversationId.take(12) + "..."
 
     // Scroll to bottom when new messages arrive
@@ -76,6 +83,14 @@ fun ChatScreen(
                         )
                     }
                 },
+                actions = {
+                    ChatOverflowMenu(
+                        onDisappearingMessages = viewModel::openDisappearingMessages,
+                        onNickname = viewModel::openNicknameEditor,
+                        onSoundNotifications = viewModel::openSoundSettings,
+                        onViewSafetyNumber = viewModel::openSafetyNumber
+                    )
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -87,7 +102,7 @@ fun ChatScreen(
                 text = messageText,
                 onTextChanged = viewModel::onMessageTextChanged,
                 onSend = viewModel::sendMessage,
-                enabled = sessionState == "ESTABLISHED" && !isSending
+                enabled = !isSending
             )
         }
     ) { innerPadding ->
@@ -99,7 +114,7 @@ fun ChatScreen(
             if (sessionState != "ESTABLISHED") {
                 KeyExchangeBanner(
                     sessionState = sessionState,
-                    onInitiate = viewModel::initiateKeyExchange
+                    onAccept = viewModel::acceptKeyExchange
                 )
             }
 
@@ -114,6 +129,42 @@ fun ChatScreen(
                     MessageBubble(message = message)
                 }
             }
+        }
+    }
+
+    // Dialogs
+    if (showDisappearingDialog) {
+        DisappearingMessagesDialog(
+            currentDuration = contact?.disappearingMessagesDuration ?: 0L,
+            onDurationSelected = viewModel::setDisappearingDuration,
+            onDismiss = viewModel::dismissDialog
+        )
+    }
+
+    if (showNicknameDialog) {
+        NicknameEditDialog(
+            currentNickname = contact?.nickname ?: "",
+            onSave = viewModel::saveNickname,
+            onDismiss = viewModel::dismissDialog
+        )
+    }
+
+    if (showSoundDialog) {
+        SoundNotificationsDialog(
+            isMuted = contact?.isMuted ?: false,
+            onToggleMute = viewModel::toggleMuted,
+            onDismiss = viewModel::dismissDialog
+        )
+    }
+
+    if (showSafetyNumberDialog) {
+        val fingerprints = safetyFingerprints
+        if (fingerprints != null) {
+            SafetyNumberDialog(
+                localFingerprint = fingerprints.first,
+                remoteFingerprint = fingerprints.second,
+                onDismiss = viewModel::dismissDialog
+            )
         }
     }
 }

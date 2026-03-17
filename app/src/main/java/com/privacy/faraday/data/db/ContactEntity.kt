@@ -9,5 +9,8 @@ data class ContactEntity(
     val lxmfAddress: String,
     val displayName: String = "",
     val sessionState: String = "UNKNOWN",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val disappearingMessagesDuration: Long = 0L,
+    val nickname: String = "",
+    val isMuted: Boolean = false
 )

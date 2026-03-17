@@ -24,5 +24,7 @@ data class MessageEntity(
     val content: String,
     val timestamp: Long = System.currentTimeMillis(),
     val isOutgoing: Boolean,
-    val status: String = "SENT"
+    val status: String = "SENT",
+    val readAt: Long = 0L,
+    val isSystem: Boolean = false
 )

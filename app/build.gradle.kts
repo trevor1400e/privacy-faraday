@@ -88,6 +88,17 @@ dependencies {
     // LibSignal (libsignal-android transitively includes libsignal-client)
     implementation(libs.libsignal.android)
 
+    // QR code generation
+    implementation(libs.zxing.core)
+
+    // QR code scanning (CameraX + ML Kit)
+    implementation(libs.mlkit.barcode.scanning)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.androidx.camera.mlkit.vision)
+
     // Core library desugaring (required by libsignal)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 

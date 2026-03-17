@@ -27,6 +27,9 @@ class MessageManager(
 
     var onMessageDecrypted: ((senderAddress: String, plaintext: String, ciphertextHex: String) -> Unit)? = null
     var onSessionEstablished: ((peerAddress: String) -> Unit)? = null
+    var onReceiptReceived: ((senderAddress: String, receiptType: Byte) -> Unit)? = null
+    var onKeyExchangeReceived: ((senderAddress: String) -> Unit)? = null
+    var onDisappearingSettingReceived: ((senderAddress: String, durationMillis: Long) -> Unit)? = null
     var onLog: ((message: String) -> Unit)? = null
 
     suspend fun initiateKeyExchange(peerLxmfAddress: String) {
@@ -105,6 +108,8 @@ class MessageManager(
         when (type) {
             MessageProtocol.TYPE_KEY_EXCHANGE -> handleKeyExchange(cleanSender, payload)
             MessageProtocol.TYPE_ENCRYPTED_MESSAGE -> handleEncryptedMessage(cleanSender, payload)
+            MessageProtocol.TYPE_RECEIPT -> handleReceipt(cleanSender, payload)
+            MessageProtocol.TYPE_DISAPPEARING_SETTING -> handleDisappearingSetting(cleanSender, payload)
             else -> onLog?.invoke("Unknown message type: $type from $cleanSender")
         }
     }
@@ -126,27 +131,8 @@ class MessageManager(
         when (contact.state) {
             ContactState.UNKNOWN -> {
                 contact.state = ContactState.KEY_EXCHANGE_RECEIVED
-                onLog?.invoke("Auto-replying with our KEY_EXCHANGE")
-                // Announce ourselves first so the peer can resolve our identity
-                try {
-                    ReticulumManager.announce()
-                    onLog?.invoke("Announced before replying")
-                } catch (_: Exception) { /* best effort */ }
-                // Send our key exchange back
-                val ourData = MessageProtocol.keyExchangeFromKeys(localKeys)
-                val ourPayload = MessageProtocol.serializeKeyExchange(ourData)
-                val envelope = MessageProtocol.wrapEnvelope(MessageProtocol.TYPE_KEY_EXCHANGE, ourPayload)
-                val base64 = Base64.getEncoder().encodeToString(envelope)
-                val result = ReticulumManager.sendMessage(senderAddress, base64.toByteArray(Charsets.UTF_8))
-                val status = result["status"] ?: "unknown"
-                onLog?.invoke("Auto-reply send result: $status")
-                if (status == "error") {
-                    onLog?.invoke("Auto-reply failed: ${result["error"]}")
-                }
-                // Transition to ESTABLISHED since we now have a session
-                contact.state = ContactState.ESTABLISHED
-                onSessionEstablished?.invoke(senderAddress)
-                onLog?.invoke("Session ESTABLISHED with $senderAddress")
+                onLog?.invoke("Key exchange received from $senderAddress — waiting for user to accept")
+                onKeyExchangeReceived?.invoke(senderAddress)
             }
             ContactState.KEY_EXCHANGE_SENT -> {
                 contact.state = ContactState.ESTABLISHED
@@ -191,6 +177,67 @@ class MessageManager(
         }
 
         onMessageDecrypted?.invoke(senderAddress, plaintext, cipherHex)
+    }
+
+    suspend fun acceptKeyExchange(peerLxmfAddress: String) {
+        val cleanAddr = cleanAddress(peerLxmfAddress)
+        val contact = contacts[cleanAddr]
+            ?: throw IllegalStateException("No contact for $cleanAddr")
+
+        onLog?.invoke("Accepting key exchange from $cleanAddr")
+
+        // Announce ourselves first so the peer can resolve our identity
+        try {
+            ReticulumManager.announce()
+            onLog?.invoke("Announced before replying")
+        } catch (_: Exception) { /* best effort */ }
+
+        // Send our key exchange back
+        val ourData = MessageProtocol.keyExchangeFromKeys(localKeys)
+        val ourPayload = MessageProtocol.serializeKeyExchange(ourData)
+        val envelope = MessageProtocol.wrapEnvelope(MessageProtocol.TYPE_KEY_EXCHANGE, ourPayload)
+        val base64 = Base64.getEncoder().encodeToString(envelope)
+        val result = ReticulumManager.sendMessage(cleanAddr, base64.toByteArray(Charsets.UTF_8))
+        val status = result["status"] ?: "unknown"
+        onLog?.invoke("Accept key exchange send result: $status")
+
+        contact.state = ContactState.ESTABLISHED
+        onSessionEstablished?.invoke(cleanAddr)
+        onLog?.invoke("Session ESTABLISHED with $cleanAddr")
+    }
+
+    suspend fun sendReceipt(peerLxmfAddress: String, receiptType: Byte) {
+        val cleanAddr = cleanAddress(peerLxmfAddress)
+        val payload = MessageProtocol.serializeReceipt(receiptType)
+        val envelope = MessageProtocol.wrapEnvelope(MessageProtocol.TYPE_RECEIPT, payload)
+        val base64 = Base64.getEncoder().encodeToString(envelope)
+        val result = ReticulumManager.sendMessage(cleanAddr, base64.toByteArray(Charsets.UTF_8))
+        val status = result["status"] ?: "unknown"
+        val typeName = if (receiptType == MessageProtocol.RECEIPT_DELIVERED) "DELIVERED" else "READ"
+        onLog?.invoke("Sent $typeName receipt to $cleanAddr: $status")
+    }
+
+    suspend fun sendDisappearingSetting(peerLxmfAddress: String, durationMillis: Long) {
+        val cleanAddr = cleanAddress(peerLxmfAddress)
+        val payload = MessageProtocol.serializeDisappearingSetting(durationMillis)
+        val envelope = MessageProtocol.wrapEnvelope(MessageProtocol.TYPE_DISAPPEARING_SETTING, payload)
+        val base64 = Base64.getEncoder().encodeToString(envelope)
+        val result = ReticulumManager.sendMessage(cleanAddr, base64.toByteArray(Charsets.UTF_8))
+        val status = result["status"] ?: "unknown"
+        onLog?.invoke("Sent disappearing setting ($durationMillis ms) to $cleanAddr: $status")
+    }
+
+    private fun handleDisappearingSetting(senderAddress: String, payload: ByteArray) {
+        val duration = MessageProtocol.parseDisappearingSetting(payload)
+        onLog?.invoke("Received disappearing setting from $senderAddress: $duration ms")
+        onDisappearingSettingReceived?.invoke(senderAddress, duration)
+    }
+
+    private fun handleReceipt(senderAddress: String, payload: ByteArray) {
+        val receiptType = MessageProtocol.parseReceipt(payload)
+        val typeName = if (receiptType == MessageProtocol.RECEIPT_DELIVERED) "DELIVERED" else "READ"
+        onLog?.invoke("Received $typeName receipt from $senderAddress")
+        onReceiptReceived?.invoke(senderAddress, receiptType)
     }
 
     private fun getOrCreateContact(address: String): ContactSession {

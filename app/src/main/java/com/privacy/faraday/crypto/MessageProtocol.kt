@@ -11,6 +11,11 @@ object MessageProtocol {
 
     const val TYPE_KEY_EXCHANGE: Byte = 0x01
     const val TYPE_ENCRYPTED_MESSAGE: Byte = 0x02
+    const val TYPE_RECEIPT: Byte = 0x03
+    const val TYPE_DISAPPEARING_SETTING: Byte = 0x04
+
+    const val RECEIPT_DELIVERED: Byte = 0x01
+    const val RECEIPT_READ: Byte = 0x02
 
     data class KeyExchangeData(
         val registrationId: Int,
@@ -111,6 +116,30 @@ object MessageProtocol {
         val signalMessageType = payload[0].toInt() and 0xFF
         val ciphertext = payload.copyOfRange(1, payload.size)
         return EncryptedMessageData(signalMessageType, ciphertext)
+    }
+
+    // --- RECEIPT serialization ---
+
+    fun serializeReceipt(receiptType: Byte): ByteArray {
+        return byteArrayOf(receiptType)
+    }
+
+    fun parseReceipt(payload: ByteArray): Byte {
+        require(payload.isNotEmpty()) { "Receipt payload empty" }
+        return payload[0]
+    }
+
+    // --- DISAPPEARING_SETTING serialization ---
+
+    fun serializeDisappearingSetting(durationMillis: Long): ByteArray {
+        val buf = ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN)
+        buf.putLong(durationMillis)
+        return buf.array()
+    }
+
+    fun parseDisappearingSetting(payload: ByteArray): Long {
+        require(payload.size >= 8) { "Disappearing setting payload too short" }
+        return ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN).getLong()
     }
 
     // --- Convenience: GeneratedKeys → KeyExchangeData ---
