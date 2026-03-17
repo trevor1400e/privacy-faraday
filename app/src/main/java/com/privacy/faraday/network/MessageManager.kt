@@ -25,7 +25,7 @@ class MessageManager(
 
     private val contacts = mutableMapOf<String, ContactSession>()
 
-    var onMessageDecrypted: ((senderAddress: String, plaintext: String, ciphertextHex: String) -> Unit)? = null
+    var onMessageDecrypted: ((senderAddress: String, plaintextBytes: ByteArray, ciphertextHex: String) -> Unit)? = null
     var onSessionEstablished: ((peerAddress: String) -> Unit)? = null
     var onReceiptReceived: ((senderAddress: String, receiptType: Byte) -> Unit)? = null
     var onKeyExchangeReceived: ((senderAddress: String) -> Unit)? = null
@@ -59,6 +59,10 @@ class MessageManager(
     }
 
     suspend fun sendEncryptedMessage(peerLxmfAddress: String, plaintext: String) {
+        sendEncryptedBytes(peerLxmfAddress, plaintext.toByteArray(Charsets.UTF_8))
+    }
+
+    suspend fun sendEncryptedBytes(peerLxmfAddress: String, plaintextBytes: ByteArray) {
         val cleanAddr = cleanAddress(peerLxmfAddress)
         val contact = contacts[cleanAddr]
             ?: throw IllegalStateException("No session for $cleanAddr")
@@ -66,7 +70,6 @@ class MessageManager(
             throw IllegalStateException("Session not established (state: ${contact.state})")
         }
 
-        val plaintextBytes = plaintext.toByteArray(Charsets.UTF_8)
         val ciphertext = SignalSessionManager.encrypt(
             localKeys.store, contact.signalAddress, plaintextBytes
         )
@@ -167,8 +170,7 @@ class MessageManager(
             msgData.ciphertext,
             msgData.signalMessageType
         )
-        val plaintext = String(decryptedBytes, Charsets.UTF_8)
-        onLog?.invoke("Decrypted: \"$plaintext\"")
+        onLog?.invoke("Decrypted ${decryptedBytes.size} bytes")
 
         // Transition to ESTABLISHED if we were in an intermediate state
         if (contact.state != ContactState.ESTABLISHED) {
@@ -176,7 +178,7 @@ class MessageManager(
             onSessionEstablished?.invoke(senderAddress)
         }
 
-        onMessageDecrypted?.invoke(senderAddress, plaintext, cipherHex)
+        onMessageDecrypted?.invoke(senderAddress, decryptedBytes, cipherHex)
     }
 
     suspend fun acceptKeyExchange(peerLxmfAddress: String) {

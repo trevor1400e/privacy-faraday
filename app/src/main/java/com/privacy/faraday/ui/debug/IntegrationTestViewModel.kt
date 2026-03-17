@@ -75,7 +75,8 @@ class IntegrationTestViewModel(application: Application) : AndroidViewModel(appl
                 // 3. Create MessageManager
                 val mgr = MessageManager(keys)
                 mgr.onLog = { msg -> addLog(msg) }
-                mgr.onMessageDecrypted = { sender, plaintext, cipherHex ->
+                mgr.onMessageDecrypted = { sender, plaintextBytes, cipherHex ->
+                    val plaintext = String(plaintextBytes, Charsets.UTF_8)
                     val ts = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
                     _uiState.update { state ->
                         state.copy(

@@ -2,8 +2,10 @@ package com.privacy.faraday.network
 
 import android.content.Context
 import android.util.Log
+import com.privacy.faraday.crypto.ContentPayload
 import com.privacy.faraday.crypto.MessageProtocol
 import com.privacy.faraday.crypto.SignalKeyManager
+import com.privacy.faraday.util.MediaStorage
 import org.signal.libsignal.protocol.SignalProtocolAddress
 import com.privacy.faraday.data.db.AppDatabase
 import com.privacy.faraday.data.db.ContactEntity
@@ -22,6 +24,7 @@ object ChatManager {
     private const val TAG = "ChatManager"
 
     private lateinit var db: AppDatabase
+    private lateinit var appContext: Context
     private var messageManager: MessageManager? = null
     private var localKeys: SignalKeyManager.GeneratedKeys? = null
     private var pollingJob: Job? = null
@@ -36,6 +39,7 @@ object ChatManager {
     fun getDatabase(): AppDatabase = db
 
     fun initialize(context: Context) {
+        appContext = context.applicationContext
         db = AppDatabase.getInstance(context)
 
         scope.launch(Dispatchers.IO) {
@@ -55,10 +59,10 @@ object ChatManager {
 
                 val mgr = MessageManager(keys)
                 mgr.onLog = { msg -> Log.d(TAG, msg) }
-                mgr.onMessageDecrypted = { senderAddress, plaintext, _ ->
+                mgr.onMessageDecrypted = { senderAddress, plaintextBytes, _ ->
                     scope.launch(Dispatchers.IO) {
                         try {
-                            handleIncomingMessage(senderAddress, plaintext)
+                            handleIncomingMessage(senderAddress, plaintextBytes)
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to handle incoming message", e)
                         }
@@ -154,7 +158,8 @@ object ChatManager {
         )
 
         try {
-            mgr.sendEncryptedMessage(cleanAddr, plaintext)
+            val payload = ContentPayload.serialize(ContentPayload.Text(plaintext))
+            mgr.sendEncryptedBytes(cleanAddr, payload)
             db.messageDao().updateStatus(msgId, "SENT")
         } catch (e: Exception) {
             db.messageDao().updateStatus(msgId, "FAILED")
@@ -210,26 +215,169 @@ object ChatManager {
             ?: MessageManager.ContactState.UNKNOWN
     }
 
-    private suspend fun handleIncomingMessage(senderAddress: String, plaintext: String) {
+    private suspend fun handleIncomingMessage(senderAddress: String, plaintextBytes: ByteArray) {
         val cleanSender = cleanAddress(senderAddress)
-
-        // Ensure contact exists
         getOrCreateContact(cleanSender)
 
-        db.messageDao().insert(
-            MessageEntity(
+        val payload = ContentPayload.deserialize(plaintextBytes)
+        val message = when (payload) {
+            is ContentPayload.Text -> MessageEntity(
                 conversationId = cleanSender,
-                content = plaintext,
+                content = payload.text,
                 isOutgoing = false,
                 status = "SENT"
             )
-        )
+            is ContentPayload.Image -> {
+                val ext = if (payload.mimeType.contains("png")) "png" else "jpg"
+                val path = MediaStorage.saveMedia(appContext, "images", ext, payload.imageBytes)
+                MessageEntity(
+                    conversationId = cleanSender,
+                    content = payload.caption.ifBlank { "Photo" },
+                    isOutgoing = false,
+                    status = "SENT",
+                    mediaType = "IMAGE",
+                    mediaUri = path,
+                    mediaSize = payload.imageBytes.size
+                )
+            }
+            is ContentPayload.File -> {
+                val ext = payload.fileName.substringAfterLast('.', "bin")
+                val path = MediaStorage.saveMedia(appContext, "files", ext, payload.fileBytes)
+                MessageEntity(
+                    conversationId = cleanSender,
+                    content = payload.fileName,
+                    isOutgoing = false,
+                    status = "SENT",
+                    mediaType = "FILE",
+                    mediaUri = path,
+                    fileName = payload.fileName,
+                    mediaSize = payload.fileBytes.size
+                )
+            }
+            is ContentPayload.Voice -> {
+                val path = MediaStorage.saveMedia(appContext, "voice", "ogg", payload.audioBytes)
+                MessageEntity(
+                    conversationId = cleanSender,
+                    content = "Voice message",
+                    isOutgoing = false,
+                    status = "SENT",
+                    mediaType = "VOICE",
+                    mediaUri = path,
+                    mediaDuration = payload.durationMs,
+                    mediaSize = payload.audioBytes.size
+                )
+            }
+            is ContentPayload.Location -> MessageEntity(
+                conversationId = cleanSender,
+                content = "Location",
+                isOutgoing = false,
+                status = "SENT",
+                mediaType = "LOCATION",
+                latitude = payload.latitude,
+                longitude = payload.longitude,
+                locationAccuracy = payload.accuracy
+            )
+        }
 
-        // Send DELIVERED receipt back to sender
+        db.messageDao().insert(message)
+
         try {
             messageManager?.sendReceipt(cleanSender, MessageProtocol.RECEIPT_DELIVERED)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send delivery receipt", e)
+        }
+    }
+
+    suspend fun sendImage(peerAddress: String, imageBytes: ByteArray, mimeType: String, caption: String) {
+        val cleanAddr = cleanAddress(peerAddress)
+        val mgr = messageManager ?: throw IllegalStateException("Not initialized")
+
+        val path = MediaStorage.saveMedia(appContext, "images", if (mimeType.contains("png")) "png" else "jpg", imageBytes)
+        val msgId = db.messageDao().insert(
+            MessageEntity(
+                conversationId = cleanAddr, content = caption.ifBlank { "Photo" }, isOutgoing = true,
+                status = "SENDING", mediaType = "IMAGE", mediaUri = path, mediaSize = imageBytes.size
+            )
+        )
+
+        try {
+            val payload = ContentPayload.serialize(ContentPayload.Image(mimeType, caption, imageBytes))
+            mgr.sendEncryptedBytes(cleanAddr, payload)
+            db.messageDao().updateStatus(msgId, "SENT")
+        } catch (e: Exception) {
+            db.messageDao().updateStatus(msgId, "FAILED")
+            Log.e(TAG, "Image send failed", e)
+            throw e
+        }
+    }
+
+    suspend fun sendFile(peerAddress: String, fileBytes: ByteArray, fileName: String, mimeType: String) {
+        if (fileBytes.size > 340_000) throw IllegalArgumentException("File too large (max 300KB)")
+        val cleanAddr = cleanAddress(peerAddress)
+        val mgr = messageManager ?: throw IllegalStateException("Not initialized")
+
+        val ext = fileName.substringAfterLast('.', "bin")
+        val path = MediaStorage.saveMedia(appContext, "files", ext, fileBytes)
+        val msgId = db.messageDao().insert(
+            MessageEntity(
+                conversationId = cleanAddr, content = fileName, isOutgoing = true,
+                status = "SENDING", mediaType = "FILE", mediaUri = path, fileName = fileName, mediaSize = fileBytes.size
+            )
+        )
+
+        try {
+            val payload = ContentPayload.serialize(ContentPayload.File(fileName, mimeType, fileBytes))
+            mgr.sendEncryptedBytes(cleanAddr, payload)
+            db.messageDao().updateStatus(msgId, "SENT")
+        } catch (e: Exception) {
+            db.messageDao().updateStatus(msgId, "FAILED")
+            Log.e(TAG, "File send failed", e)
+            throw e
+        }
+    }
+
+    suspend fun sendVoice(peerAddress: String, audioBytes: ByteArray, durationMs: Int) {
+        val cleanAddr = cleanAddress(peerAddress)
+        val mgr = messageManager ?: throw IllegalStateException("Not initialized")
+
+        val path = MediaStorage.saveMedia(appContext, "voice", "ogg", audioBytes)
+        val msgId = db.messageDao().insert(
+            MessageEntity(
+                conversationId = cleanAddr, content = "Voice message", isOutgoing = true,
+                status = "SENDING", mediaType = "VOICE", mediaUri = path, mediaDuration = durationMs, mediaSize = audioBytes.size
+            )
+        )
+
+        try {
+            val payload = ContentPayload.serialize(ContentPayload.Voice(durationMs, audioBytes))
+            mgr.sendEncryptedBytes(cleanAddr, payload)
+            db.messageDao().updateStatus(msgId, "SENT")
+        } catch (e: Exception) {
+            db.messageDao().updateStatus(msgId, "FAILED")
+            Log.e(TAG, "Voice send failed", e)
+            throw e
+        }
+    }
+
+    suspend fun sendLocation(peerAddress: String, lat: Double, lng: Double, accuracy: Float) {
+        val cleanAddr = cleanAddress(peerAddress)
+        val mgr = messageManager ?: throw IllegalStateException("Not initialized")
+
+        val msgId = db.messageDao().insert(
+            MessageEntity(
+                conversationId = cleanAddr, content = "Location", isOutgoing = true,
+                status = "SENDING", mediaType = "LOCATION", latitude = lat, longitude = lng, locationAccuracy = accuracy
+            )
+        )
+
+        try {
+            val payload = ContentPayload.serialize(ContentPayload.Location(lat, lng, accuracy))
+            mgr.sendEncryptedBytes(cleanAddr, payload)
+            db.messageDao().updateStatus(msgId, "SENT")
+        } catch (e: Exception) {
+            db.messageDao().updateStatus(msgId, "FAILED")
+            Log.e(TAG, "Location send failed", e)
+            throw e
         }
     }
 
@@ -317,7 +465,8 @@ object ChatManager {
         for (msg in queued) {
             try {
                 db.messageDao().updateStatus(msg.id, "SENDING")
-                mgr.sendEncryptedMessage(cleanAddr, msg.content)
+                val payload = ContentPayload.serialize(ContentPayload.Text(msg.content))
+                mgr.sendEncryptedBytes(cleanAddr, payload)
                 db.messageDao().updateStatus(msg.id, "SENT")
             } catch (e: Exception) {
                 db.messageDao().updateStatus(msg.id, "FAILED")

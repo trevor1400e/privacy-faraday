@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
@@ -59,7 +60,7 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun MessageBubble(message: MessageEntity) {
+fun MessageBubble(message: MessageEntity, onImageClick: (String) -> Unit = {}) {
     if (message.isSystem) {
         Box(
             modifier = Modifier
@@ -106,11 +107,17 @@ fun MessageBubble(message: MessageEntity) {
             modifier = Modifier.widthIn(max = 280.dp)
         ) {
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                Text(
-                    text = message.content,
-                    color = textColor,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                when (message.mediaType) {
+                    "IMAGE" -> ImageBubble(message, isOutgoing, onImageClick)
+                    "FILE" -> FileBubble(message, isOutgoing)
+                    "VOICE" -> VoiceBubble(message, isOutgoing)
+                    "LOCATION" -> LocationBubble(message, isOutgoing)
+                    else -> Text(
+                        text = message.content,
+                        color = textColor,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -170,7 +177,8 @@ fun ChatInputBar(
     text: String,
     onTextChanged: (String) -> Unit,
     onSend: () -> Unit,
-    enabled: Boolean
+    enabled: Boolean,
+    onAttachmentClick: () -> Unit = {}
 ) {
     Surface(
         tonalElevation = 3.dp,
@@ -183,6 +191,13 @@ fun ChatInputBar(
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(onClick = onAttachmentClick) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Attach",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
             OutlinedTextField(
                 value = text,
                 onValueChange = onTextChanged,

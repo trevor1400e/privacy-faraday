@@ -26,5 +26,13 @@ data class MessageEntity(
     val isOutgoing: Boolean,
     val status: String = "SENT",
     val readAt: Long = 0L,
-    val isSystem: Boolean = false
+    val isSystem: Boolean = false,
+    val mediaType: String = "TEXT",
+    val mediaUri: String? = null,
+    val fileName: String? = null,
+    val mediaSize: Int = 0,
+    val mediaDuration: Int = 0,
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val locationAccuracy: Float = 0f
 )

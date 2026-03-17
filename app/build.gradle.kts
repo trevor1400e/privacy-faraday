@@ -99,6 +99,18 @@ dependencies {
     implementation(libs.androidx.camera.view)
     implementation(libs.androidx.camera.mlkit.vision)
 
+    // Image loading
+    implementation(libs.coil.compose)
+
+    // Location services
+    implementation(libs.play.services.location)
+
+    // Material icons extended (for media attachment icons)
+    implementation(libs.androidx.compose.material.icons.extended)
+
+    // EXIF data for image rotation
+    implementation(libs.androidx.exifinterface)
+
     // Core library desugaring (required by libsignal)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
